@@ -8,7 +8,7 @@ Comece a leitura por [`src/review.ts`](src/review.ts). A rota em `src/app.ts` s√
 
 ## Como rodar
 
-Node 22 ou maior.
+Node 22.13 ou maior (primeira vers√£o com `node:sqlite` sem flag).
 
 ```bash
 npm install
