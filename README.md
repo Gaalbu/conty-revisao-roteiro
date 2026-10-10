@@ -26,7 +26,7 @@ A API sobe em `http://127.0.0.1:43121`, com SQLite em memória.
 | Método | Regra | Fora da regra |
 | --- | --- | --- |
 | `POST /scripts` `{body, at}` | versão 1, `awaiting_review`, timezone `America/Sao_Paulo` | body vazio → 400 |
-| `POST /scripts/:id/change-requests` `{reason, deadline_date, at}` | só em `awaiting_review`; vale se o dia civil de `at` em São Paulo ≤ prazo | sem motivo → 400 `motivo é obrigatório`; sem prazo → 400 `prazo é obrigatório`; dia civil maior → 409 `prazo encerrado`; aprovado ou pedido já aberto → 409 |
+| `POST /scripts/:id/change-requests` `{reason, deadline_date, at}` | só em `awaiting_review`; vale se o dia civil de `at` em São Paulo ≤ prazo | sem motivo → 400 `motivo é obrigatório`; sem prazo → 400 `prazo é obrigatório`; dia inexistente (`2026-02-30`, `2026-99-99`) → 400; dia civil maior → 409 `prazo encerrado`; aprovado ou pedido já aberto → 409 |
 | `POST /scripts/:id/versions` `{body, at}` | só em `changes_requested`; número incrementa, versões antigas ficam | aprovado → 409; sem pedido aberto → 409 |
 | `POST /scripts/:id/approval` `{at}` | só em `awaiting_review`; grava a versão atual | aprovado → 409 `roteiro aprovado não reabre`; pedido aberto sem versão nova → 409 |
 | `GET /scripts/:id` | versões em ordem, pedidos presos à versão, aprovação ou `null` | 404 |
@@ -84,8 +84,10 @@ Vários revisores e prazo herdado da campanha.
 
 Comece por `src/review.ts`: as quatro transições e a regra do prazo estão ali, a rota só repassa. O prazo é dia civil em America/Sao_Paulo, calculado com `Intl` sobre o `at` do request, e não os dez primeiros caracteres do ISO. Por isso `2026-03-13T02:59:59.999Z` ainda vale para o prazo `2026-03-12` e `03:00:00.000Z` já é 409 `prazo encerrado`; os dois instantes têm teste. Cada pedido de mudança fica preso à versão que o recebeu e guarda qual versão o respondeu. Aprovado não reabre: versão, pedido e segunda aprovação dão 409.
 
-Testes: `npm test` com 7 passando, `npm run typecheck` sem erro. O exemplo deste README é o request do teste do último milissegundo.
+Cada transição (criar, pedir mudança, nova versão, aprovar) grava numa transação `BEGIN IMMEDIATE`: falha no meio desfaz tudo e o retry funciona. O prazo é validado contra o calendário real, aceitando 29 de fevereiro só em ano bissexto.
+
+Testes: `npm test` com 17 passando, `npm run typecheck` sem erro. O exemplo deste README é o request do teste do último milissegundo.
 
 Ficou de fora: vários revisores e prazo herdado da campanha.
 
-IA: código, testes e README escritos com assistente de código (Claude Code), a partir de um plano escrito por mim com as regras do desafio. O assistente rodou os testes e o typecheck e colou a resposta real acima.
+IA: código, testes e README escritos com assistente de código (Claude Code), a partir de um plano com as regras do desafio. As correções de calendário e atomicidade vieram de programação em pares: o Codex auditou a entrega, reproduziu os defeitos e escreveu as primeiras correções; o Claude Code integrou, validou e publicou.
