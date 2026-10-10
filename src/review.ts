@@ -19,6 +19,12 @@ type ApprovalRow = { version_id: string; approved_at: string };
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
+function validCivilDate(value: string): boolean {
+  if (!DATE_ONLY.test(value)) return false;
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function fail(status: 400 | 404 | 409, error: string): Outcome {
   return { status, body: { error } };
 }
@@ -82,7 +88,7 @@ export function requestChanges(
   if (!reason) return fail(400, "motivo é obrigatório");
   const deadline = text(input.deadline_date);
   if (!deadline) return fail(400, "prazo é obrigatório");
-  if (!DATE_ONLY.test(deadline)) return fail(400, "prazo deve ser YYYY-MM-DD");
+  if (!validCivilDate(deadline)) return fail(400, "prazo deve ser uma data válida em YYYY-MM-DD");
   const at = instant(input.at);
   if (!at) return fail(400, "at é obrigatório");
 
