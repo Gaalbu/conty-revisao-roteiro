@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { transaction } from "./db.ts";
 import { civilDay, TIMEZONE } from "./civil-day.ts";
 
 export type Status = "awaiting_review" | "changes_requested" | "approved";
@@ -56,24 +57,26 @@ function openRequest(db: DatabaseSync, scriptId: string): RequestRow | undefined
 }
 
 export function createScript(db: DatabaseSync, input: { body?: unknown; at?: unknown }): Outcome {
-  const body = text(input.body);
-  if (!body) return fail(400, "texto do roteiro é obrigatório");
-  const at = instant(input.at);
-  if (!at) return fail(400, "at é obrigatório");
+  return transaction(db, () => {
+    const body = text(input.body);
+    if (!body) return fail(400, "texto do roteiro é obrigatório");
+    const at = instant(input.at);
+    if (!at) return fail(400, "at é obrigatório");
 
-  const id = `scr_${randomUUID()}`;
-  db.prepare("INSERT INTO scripts (id, status, timezone, created_at) VALUES (?, 'awaiting_review', ?, ?)").run(
-    id,
-    TIMEZONE,
-    at.toISOString(),
-  );
-  db.prepare("INSERT INTO versions (id, script_id, number, body, created_at) VALUES (?, ?, 1, ?, ?)").run(
-    `ver_${randomUUID()}`,
-    id,
-    body,
-    at.toISOString(),
-  );
-  return { status: 201, body: readScript(db, id) };
+    const id = `scr_${randomUUID()}`;
+    db.prepare("INSERT INTO scripts (id, status, timezone, created_at) VALUES (?, 'awaiting_review', ?, ?)").run(
+      id,
+      TIMEZONE,
+      at.toISOString(),
+    );
+    db.prepare("INSERT INTO versions (id, script_id, number, body, created_at) VALUES (?, ?, 1, ?, ?)").run(
+      `ver_${randomUUID()}`,
+      id,
+      body,
+      at.toISOString(),
+    );
+    return { status: 201, body: readScript(db, id) };
+  });
 }
 
 export function requestChanges(
@@ -81,28 +84,30 @@ export function requestChanges(
   scriptId: string,
   input: { reason?: unknown; deadline_date?: unknown; at?: unknown },
 ): Outcome {
-  const script = findScript(db, scriptId);
-  if (!script) return fail(404, "roteiro não encontrado");
+  return transaction(db, () => {
+    const script = findScript(db, scriptId);
+    if (!script) return fail(404, "roteiro não encontrado");
 
-  const reason = text(input.reason);
-  if (!reason) return fail(400, "motivo é obrigatório");
-  const deadline = text(input.deadline_date);
-  if (!deadline) return fail(400, "prazo é obrigatório");
-  if (!validCivilDate(deadline)) return fail(400, "prazo deve ser uma data válida em YYYY-MM-DD");
-  const at = instant(input.at);
-  if (!at) return fail(400, "at é obrigatório");
+    const reason = text(input.reason);
+    if (!reason) return fail(400, "motivo é obrigatório");
+    const deadline = text(input.deadline_date);
+    if (!deadline) return fail(400, "prazo é obrigatório");
+    if (!validCivilDate(deadline)) return fail(400, "prazo deve ser uma data válida em YYYY-MM-DD");
+    const at = instant(input.at);
+    if (!at) return fail(400, "at é obrigatório");
 
-  if (script.status === "approved") return fail(409, "roteiro aprovado não reabre");
-  if (script.status === "changes_requested") return fail(409, "já existe pedido de mudança aberto");
-  // O prazo vale até o fim do dia civil em São Paulo.
-  if (civilDay(at) > deadline) return fail(409, "prazo encerrado");
+    if (script.status === "approved") return fail(409, "roteiro aprovado não reabre");
+    if (script.status === "changes_requested") return fail(409, "já existe pedido de mudança aberto");
+    // O prazo vale até o fim do dia civil em São Paulo.
+    if (civilDay(at) > deadline) return fail(409, "prazo encerrado");
 
-  const version = currentVersion(db, scriptId);
-  db.prepare(
-    "INSERT INTO change_requests (id, script_id, version_id, reason, deadline_date, requested_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(`chg_${randomUUID()}`, scriptId, version.id, reason, deadline, at.toISOString());
-  db.prepare("UPDATE scripts SET status = 'changes_requested' WHERE id = ?").run(scriptId);
-  return { status: 201, body: readScript(db, scriptId) };
+    const version = currentVersion(db, scriptId);
+    db.prepare(
+      "INSERT INTO change_requests (id, script_id, version_id, reason, deadline_date, requested_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(`chg_${randomUUID()}`, scriptId, version.id, reason, deadline, at.toISOString());
+    db.prepare("UPDATE scripts SET status = 'changes_requested' WHERE id = ?").run(scriptId);
+    return { status: 201, body: readScript(db, scriptId) };
+  });
 }
 
 export function submitVersion(
@@ -110,51 +115,55 @@ export function submitVersion(
   scriptId: string,
   input: { body?: unknown; at?: unknown },
 ): Outcome {
-  const script = findScript(db, scriptId);
-  if (!script) return fail(404, "roteiro não encontrado");
+  return transaction(db, () => {
+    const script = findScript(db, scriptId);
+    if (!script) return fail(404, "roteiro não encontrado");
 
-  const body = text(input.body);
-  if (!body) return fail(400, "texto do roteiro é obrigatório");
-  const at = instant(input.at);
-  if (!at) return fail(400, "at é obrigatório");
+    const body = text(input.body);
+    if (!body) return fail(400, "texto do roteiro é obrigatório");
+    const at = instant(input.at);
+    if (!at) return fail(400, "at é obrigatório");
 
-  if (script.status === "approved") return fail(409, "roteiro aprovado não reabre");
-  const request = openRequest(db, scriptId);
-  if (script.status !== "changes_requested" || !request) {
-    return fail(409, "não há pedido de mudança aberto");
-  }
+    if (script.status === "approved") return fail(409, "roteiro aprovado não reabre");
+    const request = openRequest(db, scriptId);
+    if (script.status !== "changes_requested" || !request) {
+      return fail(409, "não há pedido de mudança aberto");
+    }
 
-  const versionId = `ver_${randomUUID()}`;
-  const number = currentVersion(db, scriptId).number + 1;
-  db.prepare("INSERT INTO versions (id, script_id, number, body, created_at) VALUES (?, ?, ?, ?, ?)").run(
-    versionId,
-    scriptId,
-    number,
-    body,
-    at.toISOString(),
-  );
-  db.prepare("UPDATE change_requests SET answered_by_version_id = ? WHERE id = ?").run(versionId, request.id);
-  db.prepare("UPDATE scripts SET status = 'awaiting_review' WHERE id = ?").run(scriptId);
-  return { status: 201, body: readScript(db, scriptId) };
+    const versionId = `ver_${randomUUID()}`;
+    const number = currentVersion(db, scriptId).number + 1;
+    db.prepare("INSERT INTO versions (id, script_id, number, body, created_at) VALUES (?, ?, ?, ?, ?)").run(
+      versionId,
+      scriptId,
+      number,
+      body,
+      at.toISOString(),
+    );
+    db.prepare("UPDATE change_requests SET answered_by_version_id = ? WHERE id = ?").run(versionId, request.id);
+    db.prepare("UPDATE scripts SET status = 'awaiting_review' WHERE id = ?").run(scriptId);
+    return { status: 201, body: readScript(db, scriptId) };
+  });
 }
 
 export function approve(db: DatabaseSync, scriptId: string, input: { at?: unknown }): Outcome {
-  const script = findScript(db, scriptId);
-  if (!script) return fail(404, "roteiro não encontrado");
-  const at = instant(input.at);
-  if (!at) return fail(400, "at é obrigatório");
+  return transaction(db, () => {
+    const script = findScript(db, scriptId);
+    if (!script) return fail(404, "roteiro não encontrado");
+    const at = instant(input.at);
+    if (!at) return fail(400, "at é obrigatório");
 
-  if (script.status === "approved") return fail(409, "roteiro aprovado não reabre");
-  if (script.status === "changes_requested") return fail(409, "pedido de mudança aberto sem versão nova");
+    if (script.status === "approved") return fail(409, "roteiro aprovado não reabre");
+    if (script.status === "changes_requested") return fail(409, "pedido de mudança aberto sem versão nova");
 
-  const version = currentVersion(db, scriptId);
-  db.prepare("INSERT INTO approvals (script_id, version_id, approved_at) VALUES (?, ?, ?)").run(
-    scriptId,
-    version.id,
-    at.toISOString(),
-  );
-  db.prepare("UPDATE scripts SET status = 'approved' WHERE id = ?").run(scriptId);
-  return { status: 201, body: readScript(db, scriptId) };
+    const version = currentVersion(db, scriptId);
+    db.prepare("INSERT INTO approvals (script_id, version_id, approved_at) VALUES (?, ?, ?)").run(
+      scriptId,
+      version.id,
+      at.toISOString(),
+    );
+    db.prepare("UPDATE scripts SET status = 'approved' WHERE id = ?").run(scriptId);
+    return { status: 201, body: readScript(db, scriptId) };
+  });
 }
 
 export function readScript(db: DatabaseSync, scriptId: string) {
