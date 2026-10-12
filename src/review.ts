@@ -166,6 +166,14 @@ export function approve(db: DatabaseSync, scriptId: string, input: { at?: unknow
   });
 }
 
+// O que cada lado pode fazer em cada estado: quem lê a resposta não precisa
+// adivinhar o próximo passo.
+const ALLOWED_ACTIONS: Record<Status, { brand: string[]; creator: string[] }> = {
+  awaiting_review: { brand: ["request_changes", "approve"], creator: [] },
+  changes_requested: { brand: [], creator: ["submit_version"] },
+  approved: { brand: [], creator: [] },
+};
+
 export function readScript(db: DatabaseSync, scriptId: string) {
   const script = findScript(db, scriptId);
   if (!script) return null;
@@ -182,6 +190,7 @@ export function readScript(db: DatabaseSync, scriptId: string) {
   return {
     id: script.id,
     status: script.status,
+    allowed_actions: ALLOWED_ACTIONS[script.status],
     timezone: script.timezone,
     versions: versions.map((version) => ({
       id: version.id,
