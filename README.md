@@ -6,6 +6,8 @@ Estados, sem pular: `awaiting_review` → `changes_requested` → `awaiting_revi
 
 Comece a leitura por [`src/review.ts`](src/review.ts). A rota em `src/app.ts` só lê o JSON, chama a função e devolve o status.
 
+**Entrada:** corpo precisa ser `application/json` (senão 415), JSON válido e objeto (senão 400) e ter até 64 KB (senão 413). Campo fora do contrato da rota → 400 com o nome do campo. Erro inesperado vira `500 {"error":"erro interno"}`, sem stack na resposta.
+
 ## Como rodar
 
 Node 22.13 ou maior (primeira versão com `node:sqlite` sem flag).
@@ -86,7 +88,7 @@ Comece por `src/review.ts`: as quatro transições e a regra do prazo estão ali
 
 Cada transição (criar, pedir mudança, nova versão, aprovar) grava numa transação `BEGIN IMMEDIATE`: falha no meio desfaz tudo e o retry funciona. O prazo é validado contra o calendário real, aceitando 29 de fevereiro só em ano bissexto.
 
-Testes: `npm test` com 17 passando, `npm run typecheck` sem erro. O exemplo deste README é o request do teste do último milissegundo.
+Testes: `npm test` com 22 passando, `npm run typecheck` sem erro. O exemplo deste README é o request do teste do último milissegundo.
 
 Ficou de fora: vários revisores e prazo herdado da campanha.
 
