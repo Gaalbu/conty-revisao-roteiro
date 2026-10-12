@@ -134,7 +134,7 @@ Comece por `src/review.ts`: as quatro transições e a regra do prazo estão ali
 
 Cada transição (criar, pedir mudança, nova versão, aprovar) grava numa transação `BEGIN IMMEDIATE`: falha no meio desfaz tudo e o retry funciona. O prazo é validado contra o calendário real, aceitando 29 de fevereiro só em ano bissexto.
 
-Testes: `npm test` com 24 passando, `npm run typecheck` sem erro. O exemplo deste README é o request do teste do último milissegundo.
+Testes: `npm test` com 25 passando, `npm run typecheck` sem erro. O exemplo deste README é o request do teste do último milissegundo.
 
 Ficou de fora: vários revisores e prazo herdado da campanha.
 

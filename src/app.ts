@@ -32,5 +32,7 @@ export function createApp(db: DatabaseSync) {
     return script ? c.json(script) : c.json({ error: "roteiro não encontrado" }, 404);
   });
 
+  app.notFound((c) => c.json({ error: "rota não encontrada" }, 404));
+
   return app;
 }
